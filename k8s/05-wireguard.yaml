@@ -1,0 +1,117 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: wireguard-pv
+  namespace: pihole
+spec:
+  storageClassName: wireguard-manual
+  persistentVolumeReclaimPolicy: Retain
+  capacity:
+    storage: 50Mi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: "/var/lib/wireguard"
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  namespace: pihole
+  name: pvc-wireguard
+spec:
+  storageClassName: wireguard-manual
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wireguard-configmap
+  namespace: pihole
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+  SERVERPORT: "51820"
+  SERVERURL: "<pihole.example.com>"
+  PEERS: "5"
+  PEERDNS: "10.43.0.30"
+  ALLOWEDIPS: "0.0.0.0/0, ::/0"
+  INTERNAL_SUBNET: "10.13.13.0"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wireguard
+  namespace: pihole
+  labels:
+    app: wireguard
+spec:
+  serviceName: "wireguard"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wireguard
+  template:
+    metadata:
+      labels:
+        app: wireguard
+    spec:
+      containers:
+      - name: wireguard
+        image: ghcr.io/linuxserver/wireguard:v1.0.20210223-ls17
+        envFrom:
+        - configMapRef:
+            name: wireguard-configmap 
+        securityContext:
+          capabilities:
+            add:
+              - NET_ADMIN
+              - SYS_MODULE
+          privileged: true
+        volumeMounts:
+          - name: wg-config
+            mountPath: /config
+          - name: host-volumes
+            mountPath: /lib/modules
+        ports:
+        - containerPort: 51820
+          protocol: UDP
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+        - name: wg-config
+          persistentVolumeClaim:
+            claimName: pvc-wireguard 
+        - name: host-volumes
+          hostPath:
+            path: /lib/modules
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wireguard-svc
+  namespace: pihole
+spec:
+  selector:
+    app: wireguard
+  ports:
+    - name: 51820-tcp
+      port: 51820
+      targetPort: 51820
+      protocol: UDP
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+status:
+  loadBalancer:
+    ingress:
+    - ip: 192.168.10.10

@@ -1,0 +1,21 @@
+# Steps:
+# 1: Create namespace called cert-manager
+# 2: deploy cert manager components (latest version) using the following command:
+#     kubectl apply -f https://github.com/jetstack/cert-manager/releases/latest/download/cert-manager.yaml
+# 3: deploy cluster issuer (this file)
+apiVersion: cert-manager.io/v1alpha2
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-pihole
+  namespace: pihole
+spec:
+  acme:
+    email: <email@example.com>
+    privateKeySecretRef:
+      name: prod-issuer-account-key
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+      - http01:
+          ingress:
+            class: traefik
+        selector: {}
