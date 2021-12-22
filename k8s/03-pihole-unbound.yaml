@@ -1,0 +1,237 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: pihole-pv
+  namespace: pihole
+spec:
+  storageClassName: pihole-manual
+  persistentVolumeReclaimPolicy: Retain
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: "/var/lib/pihole"
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  namespace: pihole
+  name: pvc-pihole
+spec:
+  storageClassName: pihole-manual
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pihole-configmap
+  namespace: pihole
+data:
+  TZ: "America/Chicago"
+  ADMIN_EMAIL: "<admin@example.com>"
+  DNS1: "10.43.0.20"
+  DNS2: "10.43.0.20"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pihole-secret
+  namespace: pihole
+data:
+  WEBPASSWORD: <password-base64-encoded>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole
+  namespace: pihole
+  labels:
+    app: pihole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pihole
+  template:
+    metadata:
+      labels:
+        app: pihole
+    spec:
+      containers:
+      - name: pihole
+        image: docker.io/pihole/pihole:2021.11
+        envFrom:
+        - configMapRef:
+            name: pihole-configmap 
+        - secretRef:
+            name: pihole-secret
+        ports:
+        - name: svc-53-udp
+          containerPort: 53
+          protocol: UDP
+        - name: svc-53-tcp
+          containerPort: 53
+          protocol: TCP
+        - name: svc-ui
+          containerPort: 80
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            port: svc-ui
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            port: svc-ui
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 10
+        resources:
+          limits:
+            memory: "300Mi"
+            cpu: "250m"
+          requests:
+            memory: "50Mi"
+            cpu: "100m"
+        volumeMounts:
+        - mountPath: /etc/pihole
+          name: pihole-etc
+      volumes:
+        - name: pihole-etc
+          persistentVolumeClaim:
+            claimName: pvc-pihole
+---
+kind: Service 
+apiVersion: v1 
+metadata:
+  name: pihole-ui-svc
+  namespace: pihole
+spec:
+  selector:
+    app: pihole
+  type: ClusterIP
+  ports:
+    - name: 80-tcp
+      port: 80
+      targetPort: 80
+      protocol: TCP
+---
+kind: Service 
+apiVersion: v1 
+metadata:
+  name: pihole-dns-svc 
+  namespace: pihole
+spec:
+  selector:
+    app: pihole
+  type: ClusterIP
+  clusterIP: 10.43.0.30
+  ports:
+    - name: 53-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
+    - name: 53-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole-dns-udp
+  namespace: pihole
+spec:
+  selector:
+    app: pihole
+  ports:
+    - name: 53-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+status:
+  loadBalancer:
+    ingress:
+    - ip: 192.168.10.10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole-dns-tcp
+  namespace: pihole
+spec:
+  selector:
+    app: pihole
+  ports:
+    - name: 53-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+status:
+  loadBalancer:
+    ingress:
+    - ip: 192.168.10.10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unbound
+  namespace: pihole
+  labels:
+    app: unbound
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unbound
+  template:
+    metadata:
+      labels:
+        app: unbound
+    spec:
+      containers:
+      - name: unbound
+        image: docker.io/mvance/unbound:1.14.0
+        ports:
+        - name: svc-53-udp
+          containerPort: 53
+          protocol: UDP
+        - name: svc-53-tcp
+          containerPort: 53
+          protocol: TCP
+        resources:
+          limits:
+            memory: "300Mi"
+            cpu: "250m"
+          requests:
+            memory: "50Mi"
+            cpu: "100m"
+---
+kind: Service 
+apiVersion: v1 
+metadata:
+  name: unbound-service 
+  namespace: pihole
+spec:
+  selector:
+    app: unbound
+  type: ClusterIP
+  clusterIP: 10.43.0.20
+  ports:
+    - name: 53-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: 53-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP

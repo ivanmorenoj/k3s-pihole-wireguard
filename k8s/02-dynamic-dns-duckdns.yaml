@@ -1,17 +1,16 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ddns-secret
+  name: ddns-duckdns-secret
   namespace: pihole
 data:
-  GOOGLE_USER: <user-base64-ecoded>
-  GOOGLE_PASS: <password-base64-ecoded>
-  GOOGLE_DOMAIN: <domain-base64-ecoded>
+  DUCK_DNS_DOMAIN: <domain-base64-ecoded>
+  DUCK_DNS_TOKEN: <duckdns-token-base64-ecoded>
 ---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: ddns-google
+  name: ddns-duckdns
   namespace: pihole
 spec:
   schedule: "*/5 * * * *"
@@ -27,8 +26,8 @@ spec:
             args:
             - /bin/sh
             - -c
-            - curl -s -u ${GOOGLE_USER}:${GOOGLE_PASS} "https://domains.google.com/nic/update?hostname=${GOOGLE_DOMAIN}"
+            - curl -s "https://www.duckdns.org/update?domains=${DUCK_DNS_DOMAIN}&token=${DUCK_DNS_TOKEN}&ip="
             envFrom:
             - secretRef:
-                name: ddns-secret
+                name: ddns-duckdns-secret
           restartPolicy: OnFailure

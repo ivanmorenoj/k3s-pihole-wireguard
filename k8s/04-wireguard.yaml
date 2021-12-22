@@ -43,14 +43,13 @@ data:
   INTERNAL_SUBNET: "10.13.13.0"
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: wireguard
   namespace: pihole
   labels:
     app: wireguard
 spec:
-  serviceName: "wireguard"
   replicas: 1
   selector:
     matchLabels:
@@ -62,7 +61,7 @@ spec:
     spec:
       containers:
       - name: wireguard
-        image: ghcr.io/linuxserver/wireguard:v1.0.20210223-ls17
+        image: docker.io/linuxserver/wireguard:1.0.20210914
         envFrom:
         - configMapRef:
             name: wireguard-configmap 

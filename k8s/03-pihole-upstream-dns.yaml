@@ -34,8 +34,8 @@ metadata:
 data:
   TZ: "America/Chicago"
   ADMIN_EMAIL: "<admin@example.com>"
-  DNS1: "10.43.0.20"
-  DNS2: "10.43.0.20"
+  DNS1: "1.1.1.1"
+  DNS2: "8.8.8.8"
 ---
 apiVersion: v1
 kind: Secret
@@ -46,17 +46,14 @@ data:
   WEBPASSWORD: <password-base64-encoded>
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: pihole
   namespace: pihole
   labels:
     app: pihole
 spec:
-  serviceName: "pihole"
   replicas: 1
-  updateStrategy:
-    type: RollingUpdate
   selector:
     matchLabels:
       app: pihole
@@ -67,7 +64,7 @@ spec:
     spec:
       containers:
       - name: pihole
-        image: docker.io/pihole/pihole:v5.7-buster
+        image: docker.io/pihole/pihole:2021.11
         envFrom:
         - configMapRef:
             name: pihole-configmap 
@@ -83,6 +80,17 @@ spec:
         - name: svc-ui
           containerPort: 80
           protocol: TCP
+        livenessProbe:
+          httpGet:
+            port: svc-ui
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            port: svc-ui
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 10
         resources:
           limits:
             memory: "300Mi"

@@ -24,7 +24,7 @@ To follow this tutorial you need to have:
   - A functional K3S cluster (See [Installation guide](https://rancher.com/docs/k3s/latest/en/installation/install-options/)). This tutorial should work with K8S, but you need to deploy some extra features like Traefik Ingress, Klipper Service Load Balancer
   - You need to have `kubectl` to perform operations in the K3S cluster
 
-## Diagram
+## System Architecture
 
 In the following image you can see the diagram that we want to implement. We can access to pihole in our local network (192.168.10.1/24) and access to admin interface through internet, finally we can access to cluster resources via VPN trough Wireguard or just route dns queries.
 ![diagram](img/pihole-k3s.jpg)
@@ -48,20 +48,6 @@ If you don't have assigned an static ip address, you can point to your public ip
 $ kubectl apply -f k8s/02-dynamic-dns-google.yaml
 ```
 
-## Unbound
-Unbound is a validating, recursive, caching DNS resolver. In order to resolve a dns query unbound queries to the root domain (.com), then queries to subdomain (example.com) and keeps doing til it found the desire domain (pihole.example.com). Is very useful to avoid some type of tracking in the popular dns servers (like google). In this tutorial we utilize this image [mvance/unbound](https://hub.docker.com/r/mvance/unbound) that comes pre-configured to works as recursive dns.
-
-This manifest comes with:
-- unbound `StatefulSet` configured as recursive DNS resolver
-- Cluster IP service to 53/tcp and 53/udp
-
-```sh
-$ kubectl apply -f k8s/03-unbound.yaml
-```
-
-### Test Unbound installation
-![unbound-dig-example](img/unbound-dig-example.png)
-
 ## Create directories
 To store config files you need to create 2 directories in the master node.
 
@@ -70,14 +56,19 @@ $ sudo mkdir -p /var/lib/{pihole,wireguard}
 ```
 
 ## Pihole 
-Pihole (as you probably already know) is a dns add blocker. In order to configure Pihole and make accessible in LAN network we need to configure a `LoadBalancer` service in 53/tcp-udp that binds in the local host. The web UI will be accessible through Ingress controller (If you don't want that just use a `NodePort` service in `pihole-ui-svc`)
+Pihole (as you probably already know) is a dns add blocker. In order to configure Pihole and make accessible in our LAN network we need to configure a `LoadBalancer` service in 53/tcp-udp that binds in the local host. The web UI will be accessible through Ingress controller (If you don't want that just use a `NodePort` service in `pihole-ui-svc`)
 
-This manifest comes with:
+This manifest comes with three different configurations:
+- Pihole with upstream servers
+- Pihole with unbound
+- Pihole with DNS over HTTP(S) with cloudflare DNS servers
+
+Common configurations:
 - Persistent volume type `hostPath` (`/var/lib/pihole`)
 - Persistent Volume claim
 - Config Map (Timezone, admin email and upstream dns)
 - Secret (Web Password)
-- Pihole `StatefulSet`
+- Pihole `Deployment`
 - Cluster IP Services (Pihole UI, Pihole DNS)
 - `LoadBalancer` Services (Pihole DNS bind to host)
 
@@ -86,10 +77,40 @@ You need to configure:
 - Admin email (pihole-configmap)
 - Web Password (pihole-secret)
 
+### Pihole with upstream servers
+This configuration forwards the dns queries to an upstream server like cloudflare dns `1.1.1.1` and google dns `8.8.8.8` with no encryption.
+
+To apply this configuration use the following command
+
 ```sh
-$ kubectl apply -f k8s/04-pihole.yaml
+$ kubectl apply -f k8s/03-pihole-upstream-dns.yaml
 ```
+
+### Pihole with unbound
+Unbound is a validating, recursive, caching DNS resolver. In order to resolve a dns query unbound queries to the root domain (.com), then queries to subdomain (example.com) and keeps doing til it found the desire domain (pihole.example.com). Is very useful to avoid some type of tracking in the popular dns servers (like google). In this tutorial we utilize this image [mvance/unbound](https://hub.docker.com/r/mvance/unbound) that comes pre-configured to works as recursive dns.
+
+To apply this configuration use the following command
+
+```sh
+$ kubectl apply -f k8s/03-pihole-unbound.yaml
+```
+
+***Test Unbound installation***
+
+![unbound-dig-example](img/unbound-dig-example.png)
+
+
+### Pihole with DNS over HTTP(S) with cloudflare DNS servers
+This configuration forward DNS queries to cloudflare dns server over https, ie. all queries are being encrypted since they are using TLS to perform the connection with cloudflare. Your ISP does not know what DNS request you are making. 
+
+To apply this configuration use the following command
+
+```sh
+$ kubectl apply -f k8s/03-pihole-DoH-cloudflare.yaml
+```
+
 ### Test Pihole installation
+
 ![pihole-dig-test](img/pihole-dig-example.png)
 
 ## WireGuard
@@ -108,7 +129,7 @@ You need to configure:
 - Number of peers (wireguard-configmap)
 
 ```sh
-$ kubectl apply -f k8s/05-wireguard.yaml
+$ kubectl apply -f k8s/04-wireguard.yaml
 ```
 ### Wireguard Client config
 
@@ -130,14 +151,14 @@ $ kubectl apply -f https://github.com/jetstack/cert-manager/releases/latest/down
 ## Deploy Cluster Issuer (Let's Encrypt)
 This manifest deploy a cluster issuer that points to Let's encrypt. You need to configure the email to get notifications.
 ```sh
-$ kubectl apply -f k8s/06-cluster-issuer-letsencrypt.yaml
+$ kubectl apply -f k8s/05-cluster-issuer-letsencrypt.yaml
 ```
 
 ## Ingress
 This manifest comes with the domain of your pihole host. You need to configure the subdomain previously configured.
 
 ```sh
-$ kubectl apply -f k8s/07-ingress.yaml
+$ kubectl apply -f k8s/06-ingress.yaml
 ```
 
 # How to use
